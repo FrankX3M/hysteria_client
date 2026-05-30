@@ -79,7 +79,23 @@ PYEOF
 XRAY_PORT=$(echo "$INBOUND" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['port'])")
 UUID=$(echo "$INBOUND" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['settings']['clients'][0]['id'])")
 PRIVATE_KEY=$(echo "$INBOUND" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['streamSettings']['realitySettings']['privateKey'])")
-PUBLIC_KEY=$(echo "$INBOUND" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['streamSettings']['realitySettings']['settings']['publicKey'])")
+PUBLIC_KEY=$(echo "$INBOUND" | python3 -c "
+import json, sys, base64
+d = json.load(sys.stdin)
+rs = d['streamSettings']['realitySettings']
+pub = rs.get('settings', {}).get('publicKey', '')
+if not pub:
+    # вычисляем из приватного ключа
+    priv_b64 = rs['privateKey'].replace('-', '+').replace('_', '/')
+    priv_b64 += '=' * (-len(priv_b64) % 4)
+    priv_bytes = base64.b64decode(priv_b64)
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+    priv = X25519PrivateKey.from_private_bytes(priv_bytes[:32])
+    pub_bytes = priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    pub = base64.urlsafe_b64encode(pub_bytes).rstrip(b'=').decode()
+print(pub)
+")
 SHORT_IDS_JSON=$(echo "$INBOUND" | python3 -c "import json,sys; d=json.load(sys.stdin); ids=d['streamSettings']['realitySettings']['shortIds']; print(json.dumps(ids))")
 SHORT_ID_FIRST=$(echo "$SHORT_IDS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)[0])")
 SNI=$(echo "$INBOUND" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['streamSettings']['realitySettings']['serverNames'][0])" | sed 's|https\?://||;s|/.*||')
