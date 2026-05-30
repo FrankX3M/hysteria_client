@@ -127,15 +127,17 @@ class DB:
 
     def get_user(self, tg_id):
         with self._conn() as c:
-            row = c.execute("SELECT * FROM users WHERE tg_id=?", (tg_id,)).fetchone()
+            cur = c.execute("SELECT * FROM users WHERE tg_id=?", (tg_id,))
+            row = cur.fetchone()
             if row:
-                return dict(zip([d[0] for d in c.description], row))
+                return dict(zip([d[0] for d in cur.description], row))
         return None
 
     def get_all_users(self):
         with self._conn() as c:
-            rows = c.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
-            cols = [d[0] for d in c.description]
+            cur = c.execute("SELECT * FROM users ORDER BY created_at DESC")
+            rows = cur.fetchall()
+            cols = [d[0] for d in cur.description]
             return [dict(zip(cols, r)) for r in rows]
 
     def set_role(self, tg_id, role):
@@ -158,24 +160,27 @@ class DB:
 
     def get_config_by_user(self, tg_id):
         with self._conn() as c:
-            row = c.execute("SELECT * FROM configs WHERE tg_id=?", (tg_id,)).fetchone()
+            cur = c.execute("SELECT * FROM configs WHERE tg_id=?", (tg_id,))
+            row = cur.fetchone()
             if row:
-                return dict(zip([d[0] for d in c.description], row))
+                return dict(zip([d[0] for d in cur.description], row))
         return None
 
     def get_config_by_id(self, cfg_id):
         with self._conn() as c:
-            row = c.execute("SELECT * FROM configs WHERE id=?", (cfg_id,)).fetchone()
+            cur = c.execute("SELECT * FROM configs WHERE id=?", (cfg_id,))
+            row = cur.fetchone()
             if row:
-                return dict(zip([d[0] for d in c.description], row))
+                return dict(zip([d[0] for d in cur.description], row))
         return None
 
     def get_all_configs(self):
         with self._conn() as c:
-            rows = c.execute(
+            cur = c.execute(
                 "SELECT c.*, u.username, u.full_name FROM configs c LEFT JOIN users u ON c.tg_id=u.tg_id ORDER BY c.created_at DESC"
-            ).fetchall()
-            cols = [d[0] for d in c.description]
+            )
+            rows = cur.fetchall()
+            cols = [d[0] for d in cur.description]
             return [dict(zip(cols, r)) for r in rows]
 
     def update_config(self, cfg_id, **kwargs):
