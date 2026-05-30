@@ -28,6 +28,23 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+# Автозагрузка .env из директории скрипта
+def _load_dotenv():
+    env_path = Path(__file__).parent / ".env"
+    if env_path.exists():
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+
+_load_dotenv()
+
 import qrcode
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
@@ -224,6 +241,41 @@ def get_server_ip() -> str:
         return "127.0.0.1"
 
 
+def _xray_pubkey_from_privkey(private_key_b64: str) -> str:
+    """Вычисляет публичный X25519 ключ из приватного (base64url)."""
+    try:
+        import base64
+        # base64url -> bytes (добавляем padding)
+        pk = private_key_b64.replace("-", "+").replace("_", "/")
+        pk += "=" * (-len(pk) % 4)
+        priv_bytes = base64.b64decode(pk)
+        # Используем sing-box или xray для генерации публичного ключа
+        r = subprocess.run(
+            ["sing-box", "generate", "reality-keypair"],
+            capture_output=True, text=True
+        )
+        # Если sing-box не помог — пробуем через cryptography
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+        priv = X25519PrivateKey.from_private_bytes(priv_bytes[:32])
+        pub_bytes = priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        pub_b64 = base64.urlsafe_b64encode(pub_bytes).rstrip(b"=").decode()
+        return pub_b64
+    except Exception as e:
+        raise RuntimeError(f"Не удалось вычислить публичный ключ: {e}. Установите: pip install cryptography --break-system-packages")
+
+
+def _clean_sni(raw: str) -> str:
+    """Очищает SNI от markdown-ссылок и лишнего."""
+    # [www.apple.com](https://www.apple.com) -> www.apple.com
+    m = re.match(r"\[([^\]]+)\]", raw)
+    if m:
+        raw = m.group(1)
+    raw = raw.replace("https://", "").replace("http://", "")
+    raw = raw.split("/")[0].split(":")[0]
+    return raw.strip()
+
+
 def load_xray_reality() -> dict:
     """Читает первый VLESS+Reality inbound из xray конфига."""
     with open(CONFIG["XRAY_CONF"]) as f:
@@ -232,11 +284,17 @@ def load_xray_reality() -> dict:
         ss = ib.get("streamSettings", {})
         if ss.get("security") == "reality":
             rs = ss["realitySettings"]
+            private_key = rs["privateKey"]
+            # публичный ключ может быть в settings.publicKey или вычисляется
+            public_key = rs.get("settings", {}).get("publicKey", "")
+            if not public_key:
+                public_key = _xray_pubkey_from_privkey(private_key)
+            sni_raw = rs["serverNames"][0] if rs.get("serverNames") else "www.apple.com"
             return {
-                "private_key": rs["privateKey"],
-                "public_key":  rs["settings"]["publicKey"],
-                "short_ids":   rs["shortIds"],
-                "sni":         rs["serverNames"][0].replace("https://", "").split("/")[0],
+                "private_key": private_key,
+                "public_key":  public_key,
+                "short_ids":   rs.get("shortIds", [""]),
+                "sni":         _clean_sni(sni_raw),
             }
     raise RuntimeError("VLESS+Reality inbound не найден в xray конфиге")
 
