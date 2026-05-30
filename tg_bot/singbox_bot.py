@@ -168,12 +168,12 @@ class DB:
     # --- Configs ---
     def add_config(self, tg_id, name, port, uuid_, sni, public_key, short_id, server_ip):
         with self._conn() as c:
-            c.execute(
+            cur = c.execute(
                 """INSERT INTO configs(tg_id,name,port,uuid,sni,public_key,short_id,server_ip,enabled,created_at,updated_at)
                    VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
                 (tg_id, name, port, uuid_, sni, public_key, short_id, server_ip, _now(), _now())
             )
-            return c.lastrowid
+            return cur.lastrowid
 
     def get_config_by_user(self, tg_id):
         with self._conn() as c:
